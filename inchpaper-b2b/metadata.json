@@ -1,0 +1,6 @@
+{
+  "name": "Inchpaper B2B",
+  "description": "Enterprise Supply Desk for centralized corporate procurement. Streamline B2B sourcing with consolidated billing, GST compliance, and customized credit cycles.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
