@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Inchpaper Enterprise Supply Desk | Centralized B2B Procurement Portal</title>
+    <!-- Suppress benign Vite/Sandbox HMR WebSocket error overlays and unhandled rejections -->
+    <script>
+      (function() {
+        const isBenignWebsocketError = (err) => {
+          if (!err) return false;
+          const text = String(err).toLowerCase();
+          return text.includes('websocket') || 
+                 text.includes('vite') || 
+                 text.includes('hmr') || 
+                 text.includes('closed without opened');
+        };
+
+        window.addEventListener('unhandledrejection', function(event) {
+          const reason = event.reason;
+          if (reason) {
+            const message = reason.message || '';
+            const stack = reason.stack || '';
+            if (isBenignWebsocketError(message) || isBenignWebsocketError(stack) || isBenignWebsocketError(reason)) {
+              event.preventDefault();
+              event.stopPropagation();
+              event.stopImmediatePropagation();
+            }
+          }
+        });
+
+        window.addEventListener('error', function(event) {
+          const message = event.message || '';
+          const error = event.error;
+          const stack = error && error.stack ? error.stack : '';
+          if (isBenignWebsocketError(message) || isBenignWebsocketError(stack) || isBenignWebsocketError(error)) {
+            event.preventDefault();
+            event.stopPropagation();
+            event.stopImmediatePropagation();
+          }
+        }, true);
+      })();
+    </script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <style>
+      body {
+        font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+      }
+    </style>
+  </head>
+  <body class="bg-[#FFFFFF] text-slate-900 antialiased overflow-x-hidden">
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
+
