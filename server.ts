@@ -81,6 +81,51 @@ function saveWorkspaceConfig(config: WorkspaceConfig): boolean {
   }
 }
 
+const SUBMISSIONS_PATH = path.join(process.cwd(), "workspace-leads-submitted.json");
+const ABANDONED_PATH = path.join(process.cwd(), "workspace-leads-abandoned.json");
+
+function getLocalSubmissions(): any[] {
+  try {
+    if (fs.existsSync(SUBMISSIONS_PATH)) {
+      return JSON.parse(fs.readFileSync(SUBMISSIONS_PATH, "utf-8"));
+    }
+  } catch (err) {
+    console.error("[SERVER] Error reading local submissions:", err);
+  }
+  return [];
+}
+
+function saveLocalSubmissions(subs: any[]): boolean {
+  try {
+    fs.writeFileSync(SUBMISSIONS_PATH, JSON.stringify(subs, null, 2), "utf-8");
+    return true;
+  } catch (err) {
+    console.error("[SERVER] Error writing local submissions:", err);
+    return false;
+  }
+}
+
+function getLocalAbandoned(): any[] {
+  try {
+    if (fs.existsSync(ABANDONED_PATH)) {
+      return JSON.parse(fs.readFileSync(ABANDONED_PATH, "utf-8"));
+    }
+  } catch (err) {
+    console.error("[SERVER] Error reading local abandoned leads:", err);
+  }
+  return [];
+}
+
+function saveLocalAbandoned(abans: any[]): boolean {
+  try {
+    fs.writeFileSync(ABANDONED_PATH, JSON.stringify(abans, null, 2), "utf-8");
+    return true;
+  } catch (err) {
+    console.error("[SERVER] Error writing local abandoned leads:", err);
+    return false;
+  }
+}
+
 async function refreshWorkspaceTokenIfNeeded(config: WorkspaceConfig): Promise<boolean> {
   if (!config.accessToken) return false;
   if (!config.refreshToken || !config.clientId || !config.clientSecret) return false;
@@ -280,6 +325,104 @@ async function startServer() {
       } else {
         return res.status(401).json({ status: "error", authenticated: false, message: "Invalid passkey. Access Denied." });
       }
+    } catch (err: any) {
+      res.status(500).json({ status: "error", message: err.message });
+    }
+  });
+
+  // Helper verifying administrators
+  function isAuthorizedAdmin(password: string): boolean {
+    const cleanPass = String(password || "").trim().toLowerCase();
+    const blacklisted = ["inchpaper123", "info@inchpaper.com"];
+    if (blacklisted.includes(cleanPass) || cleanPass.includes("inchpaper")) {
+      return false;
+    }
+    const config = getWorkspaceConfig();
+    const customPass = config.consolePasskey ? config.consolePasskey.trim().toLowerCase() : null;
+    const fallbacks = ["sm@shivmadh@sm", "sm@2026@sm"];
+    return fallbacks.includes(cleanPass) || (customPass !== null && cleanPass === customPass);
+  }
+
+  // Secure API endpoint to fetch server-side CRM lead database
+  app.get("/api/workspace/leads", (req, res) => {
+    try {
+      const password = req.query.password || req.headers["x-console-passkey"];
+      if (!password || !isAuthorizedAdmin(String(password))) {
+        return res.status(401).json({ status: "error", message: "Unauthorized. Invalid console administrator session passkey." });
+      }
+
+      const submitted = getLocalSubmissions();
+      const abandoned = getLocalAbandoned();
+      res.json({
+        status: "success",
+        submitted,
+        abandoned
+      });
+    } catch (err: any) {
+      res.status(500).json({ status: "error", message: err.message });
+    }
+  });
+
+  // Secure API endpoint to clear server-side CRM lead database lists
+  app.post("/api/workspace/clear-leads", (req, res) => {
+    try {
+      const { password, type } = req.body;
+      if (!password || !isAuthorizedAdmin(String(password))) {
+        return res.status(401).json({ status: "error", message: "Unauthorized. Access purge permissions denied." });
+      }
+
+      if (type === "submissions") {
+        saveLocalSubmissions([]);
+      } else if (type === "abandoned") {
+        saveLocalAbandoned([]);
+      } else {
+        return res.status(400).json({ status: "error", message: "Invalid lead collection type." });
+      }
+
+      res.json({ status: "success", message: `Successfully cleared all ${type} records on server.` });
+    } catch (err: any) {
+      res.status(500).json({ status: "error", message: err.message });
+    }
+  });
+
+  // API endpoint for visitors to save progress-in-flight (abandoned) leads dynamically
+  app.post("/api/workspace/save-abandoned", (req, res) => {
+    try {
+      const { lead } = req.body;
+      if (!lead || typeof lead !== "object") {
+        return res.status(400).json({ status: "error", message: "Invalid lead payload in body." });
+      }
+
+      const email = lead.corporateEmail || lead.corporate_email;
+      const comp = lead.companyName || lead.company_name;
+
+      if (!email && !comp) {
+        return res.status(400).json({ status: "error", message: "Insufficient identifying elements to save progress lead." });
+      }
+
+      const abandoned = getLocalAbandoned();
+      let matchedIndex = -1;
+
+      if (email && email !== "Not specified yet") {
+        matchedIndex = abandoned.findIndex((item: any) => {
+          const itemEmail = item.corporateEmail || item.corporate_email;
+          return itemEmail && itemEmail === email;
+        });
+      } else if (comp && comp !== "Not specified yet") {
+        matchedIndex = abandoned.findIndex((item: any) => {
+          const itemComp = item.companyName || item.company_name;
+          return itemComp && itemComp === comp;
+        });
+      }
+
+      if (matchedIndex > -1) {
+        abandoned[matchedIndex] = { ...abandoned[matchedIndex], ...lead };
+      } else {
+        abandoned.unshift(lead);
+      }
+
+      saveLocalAbandoned(abandoned);
+      res.json({ status: "success", message: "In-progress lead synced server-side." });
     } catch (err: any) {
       res.status(500).json({ status: "error", message: err.message });
     }
@@ -882,6 +1025,40 @@ async function uploadFileToDrive(accessToken: string, file: { name: string; base
     try {
       const payload = req.body;
       console.log("[SERVER STATE] New RFQ payload received:", payload);
+
+      // Back up this submission to our local server JSON database immediately as an bulletproof failsafe
+      try {
+        const subs = getLocalSubmissions();
+        const pTicket = payload.ticketId || payload.ticket_id || payload["Ticket ID"];
+        const existingIdx = subs.findIndex((s: any) => {
+          const sTicket = s.ticketId || s.ticket_id || s["Ticket ID"];
+          return sTicket && pTicket && sTicket === pTicket;
+        });
+        if (existingIdx > -1) {
+          subs[existingIdx] = payload;
+        } else {
+          subs.unshift(payload);
+        }
+        saveLocalSubmissions(subs);
+        console.log("[SERVER STATE] RFQ lead successfully backed up to local server JSON database.");
+
+        // Clear related record from server-side abandoned leads
+        const email = payload.corporateEmail || payload.corporate_email || payload["Corporate Email"];
+        const comp = payload.companyName || payload.company_name || payload["Company Name"];
+        if (email || comp) {
+          let abandoned = getLocalAbandoned();
+          abandoned = abandoned.filter((lead: any) => {
+            const leadEmail = lead.corporateEmail || lead.corporate_email || lead["Corporate Email"];
+            const leadComp = lead.companyName || lead.company_name || lead["Company Name"];
+            const isEmailMatch = email && leadEmail === email;
+            const isCompMatch = comp && leadComp === comp;
+            return !isEmailMatch && !isCompMatch;
+          });
+          saveLocalAbandoned(abandoned);
+        }
+      } catch (backupError: any) {
+        console.error("[SERVER STATE] Warning: Failed to write to server local JSON disk:", backupError.message);
+      }
 
       // Real, valid Make.com regional Webhook URLs based on the active EU1 instance.
       const hookIds = [

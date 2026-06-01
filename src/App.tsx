@@ -398,6 +398,15 @@ export default function App() {
       }
 
       localStorage.setItem('inchpaper_abandoned_leads', JSON.stringify(abandonedList));
+
+      // Synchronize in-progress leads server-side dynamically for centralized backup
+      fetch("/api/workspace/save-abandoned", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ lead: updatedLead })
+      }).catch(err => console.warn("Failed syncing in-progress lead to the server:", err));
     } catch (e) {
       console.warn("Storage write failure for lead progress log", e);
     }

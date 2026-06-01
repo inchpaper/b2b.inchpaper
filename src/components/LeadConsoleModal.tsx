@@ -199,16 +199,35 @@ export default function LeadConsoleModal({ isOpen, onClose }: LeadConsoleModalPr
     }
   };
 
-  // Load leads from storage
-  const loadLeads = () => {
+  // Load leads from storage (authenticated server pull with local localStorage backup context)
+  const loadLeads = async () => {
+    if (isUnlocked && password) {
+      try {
+        const res = await fetch(`/api/workspace/leads?password=${encodeURIComponent(password)}`);
+        if (res.ok) {
+          const data = await res.json();
+          if (data.status === 'success') {
+            setSubmittedList(data.submitted || []);
+            setAbandonedList(data.abandoned || []);
+            // Keep local backup as fallback
+            localStorage.setItem('inchpaper_submitted_leads', JSON.stringify(data.submitted || []));
+            localStorage.setItem('inchpaper_abandoned_leads', JSON.stringify(data.abandoned || []));
+            return;
+          }
+        }
+      } catch (err) {
+        console.warn("Failed to load leads from secure server-side database:", err);
+      }
+    }
+
+    // LocalStorage Fallback (so it functions even without password unlocked or offline)
     try {
       const subs = localStorage.getItem('inchpaper_submitted_leads');
       const abans = localStorage.getItem('inchpaper_abandoned_leads');
-      
       setSubmittedList(subs ? JSON.parse(subs) : []);
       setAbandonedList(abans ? JSON.parse(abans) : []);
     } catch (e) {
-      console.error("Failed to parse leads from local storage:", e);
+      console.error("Failed to parse leads from local storage fallback:", e);
     }
   };
 
@@ -428,8 +447,34 @@ export default function LeadConsoleModal({ isOpen, onClose }: LeadConsoleModalPr
     }
   };
 
-  const handleDeleteAll = (type: 'submissions' | 'abandoned') => {
-    if (window.confirm(`Are you absolutely sure you want to permanently delete all ${type === 'submissions' ? 'completed submissions' : 'abandoned / in-progress leads'}? This action is irreversible.`)) {
+  const handleDeleteAll = async (type: 'submissions' | 'abandoned') => {
+    if (window.confirm(`Are you absolutely sure you want to permanently delete all ${type === 'submissions' ? 'completed submissions' : 'abandoned / in-progress leads'} on the server? This action is irreversible.`)) {
+      try {
+        if (isUnlocked && password) {
+          const res = await fetch('/api/workspace/clear-leads', {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json"
+            },
+            body: JSON.stringify({ password, type })
+          });
+          if (res.ok) {
+            if (type === 'submissions') {
+              setSubmittedList([]);
+              localStorage.removeItem('inchpaper_submitted_leads');
+            } else {
+              setAbandonedList([]);
+              localStorage.removeItem('inchpaper_abandoned_leads');
+            }
+            alert(`Purged all ${type} records successfully from server and local storage.`);
+            return;
+          }
+        }
+      } catch (err) {
+        console.error("Failed server database purge:", err);
+      }
+
+      // Standalone client local storage fallback clear
       try {
         if (type === 'submissions') {
           localStorage.removeItem('inchpaper_submitted_leads');
