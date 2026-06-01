@@ -174,6 +174,7 @@ function getAuditLogs(): any[] {
 }
 
 async function startServer() {
+  app.set("trust proxy", 1);
   app.use(express.json({ limit: "50mb" }));
   app.use(express.urlencoded({ limit: "50mb", extended: true }));
 
@@ -307,7 +308,12 @@ async function startServer() {
       config.clientSecret = clientSecret.trim();
       saveWorkspaceConfig(config);
 
-      const appUrl = process.env.APP_URL ? process.env.APP_URL.replace(/\/$/, "") : `${req.protocol}://${req.get("host")}`;
+      let protocol = req.protocol;
+      const host = req.get("host") || "";
+      if (!host.includes("localhost") && !host.includes("127.0.0.1")) {
+        protocol = "https";
+      }
+      const appUrl = process.env.APP_URL ? process.env.APP_URL.replace(/\/$/, "") : `${protocol}://${host}`;
       const redirectUri = `${appUrl}/api/workspace/google-oauth-callback`;
 
       const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?` + new URLSearchParams({
@@ -340,7 +346,12 @@ async function startServer() {
         return res.status(400).send("<h3>Authorization Error: Missing saved Client ID or Client Secret properties on server.</h3>");
       }
 
-      const appUrl = process.env.APP_URL ? process.env.APP_URL.replace(/\/$/, "") : `${req.protocol}://${req.get("host")}`;
+      let protocol = req.protocol;
+      const host = req.get("host") || "";
+      if (!host.includes("localhost") && !host.includes("127.0.0.1")) {
+        protocol = "https";
+      }
+      const appUrl = process.env.APP_URL ? process.env.APP_URL.replace(/\/$/, "") : `${protocol}://${host}`;
       const redirectUri = `${appUrl}/api/workspace/google-oauth-callback`;
 
       // Exchange the authorization code for tokens
