@@ -10,6 +10,9 @@ const CONFIG_PATH = path.join(process.cwd(), "workspace-config.json");
 
 interface WorkspaceConfig {
   accessToken: string | null;
+  refreshToken: string | null;
+  clientId: string | null;
+  clientSecret: string | null;
   adminEmail: string | null;
   spreadsheetId: string | null;
   spreadsheetUrl: string | null;
@@ -17,6 +20,7 @@ interface WorkspaceConfig {
   folderUrl: string | null;
   sheetsSyncActive: boolean;
   gmailAlertsActive: boolean;
+  consolePasskey: string | null;
 }
 
 function getWorkspaceConfig(): WorkspaceConfig {
@@ -35,13 +39,17 @@ function getWorkspaceConfig(): WorkspaceConfig {
 
       return {
         accessToken: parsed.accessToken ?? null,
+        refreshToken: parsed.refreshToken ?? null,
+        clientId: parsed.clientId ?? null,
+        clientSecret: parsed.clientSecret ?? null,
         adminEmail: parsed.adminEmail ?? null,
         spreadsheetId: parsed.spreadsheetId ?? null,
         spreadsheetUrl: parsed.spreadsheetUrl ?? null,
         folderId: folderId,
         folderUrl: parsed.folderUrl ?? null,
         sheetsSyncActive: !!parsed.sheetsSyncActive,
-        gmailAlertsActive: !!parsed.gmailAlertsActive
+        gmailAlertsActive: !!parsed.gmailAlertsActive,
+        consolePasskey: parsed.consolePasskey ?? null
       };
     }
   } catch (err) {
@@ -49,6 +57,9 @@ function getWorkspaceConfig(): WorkspaceConfig {
   }
   return {
     accessToken: null,
+    refreshToken: null,
+    clientId: null,
+    clientSecret: null,
     adminEmail: null,
     spreadsheetId: null,
     spreadsheetUrl: null,
@@ -56,6 +67,7 @@ function getWorkspaceConfig(): WorkspaceConfig {
     folderUrl: null,
     sheetsSyncActive: false,
     gmailAlertsActive: false,
+    consolePasskey: null
   };
 }
 
@@ -67,6 +79,58 @@ function saveWorkspaceConfig(config: WorkspaceConfig): boolean {
     console.error("[SERVER] Error writing workspace config:", err);
     return false;
   }
+}
+
+async function refreshWorkspaceTokenIfNeeded(config: WorkspaceConfig): Promise<boolean> {
+  if (!config.accessToken) return false;
+  if (!config.refreshToken || !config.clientId || !config.clientSecret) return false;
+
+  // Check token validity
+  try {
+    const tokenRes = await fetch(`https://www.googleapis.com/oauth2/v3/tokeninfo?access_token=${config.accessToken}`);
+    if (tokenRes.ok) {
+      const info = await tokenRes.json();
+      const expires_in = parseInt(info.expires_in) || 0;
+      // If the token expires in more than 5 minutes, keep using it
+      if (expires_in > 300) {
+        return true;
+      }
+    }
+  } catch (err) {
+    console.warn("[SERVER WORKSPACE] Failed to check token info, attempting refresh anyway:", err);
+  }
+
+  // Attempt refresh using OAuth2 endpoint
+  try {
+    console.log("[SERVER WORKSPACE] Google token expires soon or has expired. Requesting refreshment...");
+    const refreshRes = await fetch("https://oauth2.googleapis.com/token", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        client_id: config.clientId,
+        client_secret: config.clientSecret,
+        refresh_token: config.refreshToken,
+        grant_type: "refresh_token"
+      }).toString()
+    });
+
+    if (refreshRes.ok) {
+      const data = await refreshRes.json();
+      if (data.access_token) {
+        config.accessToken = data.access_token;
+        saveWorkspaceConfig(config);
+        console.log("[SERVER WORKSPACE] Google workspace token renewed successfully via Refresh Token.");
+        return true;
+      }
+    } else {
+      const txt = await refreshRes.text();
+      console.error("[SERVER WORKSPACE] Failed to renew Google token:", txt);
+    }
+  } catch (err: any) {
+    console.error("[SERVER WORKSPACE] Background token renewal exception:", err.message);
+  }
+
+  return false;
 }
 
 function appendAuditLog(action: string, status: number, details: string) {
@@ -131,17 +195,23 @@ async function startServer() {
         folderUrl: config.folderUrl || "https://drive.google.com/drive/my-drive",
         sheetsSyncActive: config.sheetsSyncActive,
         gmailAlertsActive: config.gmailAlertsActive,
-        isConnected: !!config.accessToken
+        isConnected: !!config.accessToken,
+        clientId: config.clientId,
+        hasRefreshToken: !!config.refreshToken,
+        isPermanent: !!(config.refreshToken && config.clientId)
       }
     });
   });
 
   app.post("/api/workspace/save-config", (req, res) => {
     try {
-      const { accessToken, adminEmail, sheetsSyncActive, gmailAlertsActive, spreadsheetId, spreadsheetUrl, folderId, folderUrl } = req.body;
+      const { accessToken, refreshToken, clientId, clientSecret, adminEmail, sheetsSyncActive, gmailAlertsActive, spreadsheetId, spreadsheetUrl, folderId, folderUrl, consolePasskey } = req.body;
       const current = getWorkspaceConfig();
 
       if (accessToken !== undefined) current.accessToken = accessToken;
+      if (refreshToken !== undefined) current.refreshToken = refreshToken;
+      if (clientId !== undefined) current.clientId = clientId;
+      if (clientSecret !== undefined) current.clientSecret = clientSecret;
       if (adminEmail !== undefined) current.adminEmail = adminEmail;
       if (sheetsSyncActive !== undefined) current.sheetsSyncActive = !!sheetsSyncActive;
       if (gmailAlertsActive !== undefined) current.gmailAlertsActive = !!gmailAlertsActive;
@@ -149,6 +219,17 @@ async function startServer() {
       if (spreadsheetUrl !== undefined) current.spreadsheetUrl = spreadsheetUrl || null;
       if (folderId !== undefined) current.folderId = folderId || null;
       if (folderUrl !== undefined) current.folderUrl = folderUrl || null;
+      
+      if (consolePasskey !== undefined) {
+        if (consolePasskey) {
+          const cleanConsolePass = consolePasskey.trim().toLowerCase();
+          const blacklisted = ["inchpaper123", "info@inchpaper.com"];
+          if (blacklisted.includes(cleanConsolePass) || cleanConsolePass.includes("inchpaper")) {
+            return res.status(400).json({ status: "error", message: "This passkey has been blacklisted and disabled for security." });
+          }
+        }
+        current.consolePasskey = consolePasskey || null;
+      }
 
       saveWorkspaceConfig(current);
       res.json({ status: "success", message: "Workspace configuration updated successfully." });
@@ -157,9 +238,190 @@ async function startServer() {
     }
   });
 
+  // Secure API endpoint to verify Lead Console Access Passkey
+  app.post("/api/workspace/verify-passkey", (req, res) => {
+    try {
+      const { password } = req.body;
+      if (!password) {
+        return res.status(400).json({ status: "error", message: "Password is required." });
+      }
+
+      const config = getWorkspaceConfig();
+      const cleanPass = password.trim().toLowerCase();
+
+      // Explicitly blacklist and block the old/unsecure passphrases
+      const blacklisted = ["inchpaper123", "info@inchpaper.com"];
+      if (blacklisted.includes(cleanPass) || cleanPass.includes("inchpaper")) {
+        console.warn(`[VERIFY PASSKEY] BLOCKED blacklisted passphrase attempt: "${cleanPass}"`);
+        return res.status(401).json({ status: "error", authenticated: false, message: "This passkey has been blacklisted and disabled for security." });
+      }
+
+      // If the saved custom passkey is one of the blacklisted keys, wipe it from memory & disk immediately
+      if (config.consolePasskey) {
+        const checkCustom = config.consolePasskey.trim().toLowerCase();
+        if (blacklisted.includes(checkCustom) || checkCustom.includes("inchpaper")) {
+          console.log("[SERVER CONFIG] Disabling and clearing blacklisted custom consolePasskey found in local config.");
+          config.consolePasskey = null;
+          saveWorkspaceConfig(config);
+        }
+      }
+
+      const customPass = config.consolePasskey ? config.consolePasskey.trim().toLowerCase() : null;
+
+      // Allow either a valid non-blacklisted custom code OR any of the primary fallback keys
+      const fallbacks = ["sm@shivmadh@sm", "sm@2026@sm"];
+      const isCorrect = fallbacks.includes(cleanPass) || (customPass && cleanPass === customPass);
+
+      console.log(`[VERIFY PASSKEY] Checked password: "${cleanPass}". Custom Passkey: "${customPass}". Match status: ${isCorrect}`);
+
+      if (isCorrect) {
+        return res.json({ status: "success", authenticated: true });
+      } else {
+        return res.status(401).json({ status: "error", authenticated: false, message: "Invalid passkey. Access Denied." });
+      }
+    } catch (err: any) {
+      res.status(500).json({ status: "error", message: err.message });
+    }
+  });
+
+  const GOOGLE_SCOPES = [
+    "https://www.googleapis.com/auth/spreadsheets",
+    "https://www.googleapis.com/auth/gmail.send",
+    "https://www.googleapis.com/auth/drive.file",
+    "https://www.googleapis.com/auth/userinfo.email",
+    "https://www.googleapis.com/auth/userinfo.profile"
+  ].join(" ");
+
+  app.get("/api/workspace/google-oauth-start", (req, res) => {
+    try {
+      const config = getWorkspaceConfig();
+      const clientId = (req.query.clientId as string) || config.clientId;
+      const clientSecret = (req.query.clientSecret as string) || config.clientSecret;
+      
+      if (!clientId || !clientSecret) {
+        return res.status(400).send("<h3>OAuth Error: Google Client ID and Secret are required to launch a permanent connection.</h3>");
+      }
+
+      // Temporarily store credentials to use in the callback
+      config.clientId = clientId.trim();
+      config.clientSecret = clientSecret.trim();
+      saveWorkspaceConfig(config);
+
+      const appUrl = process.env.APP_URL ? process.env.APP_URL.replace(/\/$/, "") : `${req.protocol}://${req.get("host")}`;
+      const redirectUri = `${appUrl}/api/workspace/google-oauth-callback`;
+
+      const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?` + new URLSearchParams({
+        client_id: config.clientId,
+        redirect_uri: redirectUri,
+        response_type: "code",
+        scope: GOOGLE_SCOPES,
+        access_type: "offline",
+        prompt: "consent"
+      }).toString();
+
+      res.redirect(authUrl);
+    } catch (err: any) {
+      res.status(500).send(`Error starting Google OAuth flow: ${err.message}`);
+    }
+  });
+
+  app.get("/api/workspace/google-oauth-callback", async (req, res) => {
+    try {
+      const { code, error } = req.query;
+      if (error) {
+        return res.status(400).send(`<h3>Authorization Error: ${error}</h3>`);
+      }
+      if (!code) {
+        return res.status(400).send("<h3>Authorization Error: Undefined authorization code returned from Google.</h3>");
+      }
+
+      const config = getWorkspaceConfig();
+      if (!config.clientId || !config.clientSecret) {
+        return res.status(400).send("<h3>Authorization Error: Missing saved Client ID or Client Secret properties on server.</h3>");
+      }
+
+      const appUrl = process.env.APP_URL ? process.env.APP_URL.replace(/\/$/, "") : `${req.protocol}://${req.get("host")}`;
+      const redirectUri = `${appUrl}/api/workspace/google-oauth-callback`;
+
+      // Exchange the authorization code for tokens
+      const tokenRes = await fetch("https://oauth2.googleapis.com/token", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({
+          client_id: config.clientId,
+          client_secret: config.clientSecret,
+          code: code as string,
+          redirect_uri: redirectUri,
+          grant_type: "authorization_code"
+        }).toString()
+      });
+
+      if (!tokenRes.ok) {
+        const errorText = await tokenRes.text();
+        return res.status(400).send(`<h3>Failed to Exchange Tokens with Google:</h3><pre>${errorText}</pre>`);
+      }
+
+      const tokens = await tokenRes.json();
+      if (!tokens.access_token) {
+        return res.status(400).send("<h3>Failed to Exchange Tokens: Google returned invalid token payload.</h3>");
+      }
+
+      config.accessToken = tokens.access_token;
+      if (tokens.refresh_token) {
+        config.refreshToken = tokens.refresh_token;
+      }
+
+      // Fetch user profile to get their email address
+      try {
+        const profileRes = await fetch("https://www.googleapis.com/oauth2/v2/userinfo", {
+          headers: { "Authorization": `Bearer ${tokens.access_token}` }
+        });
+        if (profileRes.ok) {
+          const profile = await profileRes.json();
+          if (profile.email) {
+            config.adminEmail = profile.email;
+          }
+        }
+      } catch (e) {
+        console.warn("Could not fetch Google user details:", e);
+      }
+
+      // Default features to active upon linking successfully
+      config.sheetsSyncActive = true;
+      config.gmailAlertsActive = true;
+      saveWorkspaceConfig(config);
+      appendAuditLog("Google Account Connect (Permanent)", 200, `Linked as ${config.adminEmail} with refresh capabilities.`);
+
+      res.send(`
+        <html>
+          <body style="font-family: system-ui, -apple-system, sans-serif; text-align: center; padding: 50px 20px; background-color: #fcfcfd;">
+            <div style="max-width: 500px; margin: 0 auto; background: white; padding: 30px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); border: 1px solid #eef0f3;">
+              <h2 style="color: #10b981; margin-bottom: 8px;">✓ Account Successfully Linked!</h2>
+              <p style="color: #6b7280; font-size: 15px; line-height: 1.5; margin-bottom: 24px;">
+                Your Google Workspace connection is activated with live multi-hour auto-refresh capability. Your B2B workspace will stay connected indefinitely.
+              </p>
+              <p style="color: #9ca3af; font-size: 13px;">This window will close automatically in a moment.</p>
+            </div>
+            <script>
+              if (window.opener) {
+                window.opener.postMessage({ type: 'OAUTH_AUTH_SUCCESS' }, '*');
+                setTimeout(() => { window.close(); }, 1800);
+              } else {
+                setTimeout(() => { window.location.href = '/'; }, 2500);
+              }
+            </script>
+          </body>
+        </html>
+      `);
+    } catch (err: any) {
+      res.status(500).send(`Server Error during OAuth Callback: ${err.message}`);
+    }
+  });
+
   app.post("/api/workspace/create-sheet", async (req, res) => {
     try {
       const config = getWorkspaceConfig();
+      await refreshWorkspaceTokenIfNeeded(config);
       if (!config.accessToken) {
         return res.status(401).json({ status: "error", message: "Google Workspace accounts not authorized yet. Please link your account first." });
       }
@@ -303,6 +565,7 @@ async function startServer() {
   app.get("/api/workspace/diagnostics", async (req, res) => {
     try {
       const config = getWorkspaceConfig();
+      await refreshWorkspaceTokenIfNeeded(config);
       if (!config.accessToken) {
         return res.json({
           status: "disconnected",
@@ -445,6 +708,96 @@ async function startServer() {
     }
   });
 
+  // Trigger a real-time manual test email via Gmail to the connected admin
+  app.post("/api/workspace/test-email", async (req, res) => {
+    try {
+      const config = getWorkspaceConfig();
+      await refreshWorkspaceTokenIfNeeded(config);
+      if (!config.accessToken) {
+        return res.status(401).json({ status: "error", message: "Google Workspace is not linked yet. Please link your account first under Workspace Integration." });
+      }
+      if (!config.adminEmail) {
+        return res.status(400).json({ status: "error", message: "Admin Email is not configured." });
+      }
+
+      const testSubject = `[TEST ALERT] Gmail Connection Test - Inchpaper B2B Portal`;
+      const testHtmlBody = `
+<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);">
+  <div style="background-color: #7D0909; padding: 24px; text-align: center; color: white;">
+    <h1 style="margin: 0; font-size: 22px; font-weight: 800; letter-spacing: 1px;">INCHPAPER B2B PORTAL</h1>
+    <p style="margin: 4px 0 0; font-size: 13px; opacity: 0.9;">Gmail API Connection Relay Test</p>
+  </div>
+  <div style="padding: 24px; background-color: #ffffff;">
+    <p style="font-size: 15px; color: #1a202c; font-weight: bold; margin-top: 0;">Connection Relay Success!</p>
+    <p style="font-size: 14px; color: #4a5568; line-height: 1.5;">This is an enterprise connection validation message dispatched automatically from your procurement website backend at <b>b2b.inchpaper.com</b>.</p>
+    <p style="font-size: 14px; color: #4a5568; line-height: 1.5;">Since you are receiving this message inside your inbox, it confirms that your Google Cloud OAuth application parameters, authentication tokens, scopes, and Gmail API routing are <b>100% active and running correctly</b>.</p>
+    
+    <div style="margin-top: 25px; padding: 15px; background-color: #f0fdf4; border-left: 4px solid #16a34a; border-radius: 4px;">
+      <p style="margin: 0; font-size: 12px; color: #166534; font-weight: bold;">System Status: OPERATIONAL</p>
+      <p style="margin: 5px 0 0; font-size: 12px; color: #14532d; line-height: 1.4;">
+        Submitting future RFQs will automatically trigger instant, simultaneous notification alerts to both the administrators and the procurement customers successfully.
+      </p>
+    </div>
+  </div>
+  <div style="background-color: #edf2f7; padding: 16px; text-align: center; border-top: 1px solid #edf2f7;">
+    <p style="margin: 0; font-size: 11px; color: #718096;">Inchpaper Corporate Headquarters • Google Workspace Integration</p>
+  </div>
+</div>`;
+
+      const rawMime = [
+        `From: ${config.adminEmail}`,
+        `To: ${config.adminEmail}`,
+        `Subject: ${testSubject}`,
+        "MIME-Version: 1.0",
+        "Content-Type: text/html; charset=utf-8",
+        "",
+        testHtmlBody
+      ].join("\r\n");
+
+      const normalizedMime = rawMime.replace(/\r?\n/g, "\r\n");
+      const b64Mime = Buffer.from(normalizedMime, "utf-8")
+        .toString("base64")
+        .replace(/\+/g, "-")
+        .replace(/\//g, "_")
+        .replace(/=+$/, "");
+
+      console.log(`[SERVER TEST EMAIL] Dispatching manual connection test send to ${config.adminEmail}...`);
+      const response = await fetch("https://www.googleapis.com/gmail/v1/users/me/messages/send", {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${config.accessToken}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ raw: b64Mime })
+      });
+
+      const responseBody = await response.text();
+      let responseJson: any = null;
+      try {
+        responseJson = JSON.parse(responseBody);
+      } catch (e) {}
+
+      if (response.ok) {
+        appendAuditLog("Gmail: Manual Test Dispatch", 200, `Success! Sent connection validation email to ${config.adminEmail}.`);
+        res.json({
+          status: "success",
+          message: "Connection verification email sent successfully. Please check your inbox for '[TEST ALERT] Gmail Connection Test - Inchpaper B2B Portal'.",
+          details: responseJson
+        });
+      } else {
+        appendAuditLog("Gmail: Manual Test Dispatch", response.status, `Failed to deliver test email. Response: ${responseBody}`);
+        res.status(response.status).json({
+          status: "error",
+          message: `Google API rejected email sending. Please ensure Gmail API is enabled in your Google Cloud Developer Console.`,
+          details: responseJson || responseBody
+        });
+      }
+    } catch (err: any) {
+      console.error("[SERVER TEST EMAIL] Failure:", err);
+      res.status(500).json({ status: "error", message: err.message });
+    }
+  });
+
 async function uploadFileToDrive(accessToken: string, file: { name: string; base64: string }, folderId: string): Promise<string | null> {
   try {
     const boundary = "314159265358979323846";
@@ -554,6 +907,7 @@ async function uploadFileToDrive(accessToken: string, file: { name: string; base
 
       // Google Workspace Integration (Google Sheets Sync and Gmail Alert Notifications)
       const workspaceConfig = getWorkspaceConfig();
+      await refreshWorkspaceTokenIfNeeded(workspaceConfig);
       const workspaceLog: string[] = [];
 
       // A) Handle file uploads up-front if they exist and we're linked with Drive
@@ -751,6 +1105,11 @@ async function uploadFileToDrive(accessToken: string, file: { name: string; base
       if (workspaceConfig.gmailAlertsActive && workspaceConfig.accessToken && workspaceConfig.adminEmail) {
         console.log("[SERVER WORKSPACE] Gmail Alerts are active. Dispatching alert emails...");
         try {
+          // Resolve actual dynamic host URL to serve the embedded logo asset stably
+          const requestHost = req.get("host") || "ais-dev-vah5yy5ennj3byylppz3ri-894778684127.asia-southeast1.run.app";
+          const baseUrl = requestHost.includes("localhost") || requestHost.includes("127.0.0.1") ? `http://${requestHost}` : `https://${requestHost}`;
+          const logoUrl = `${baseUrl}/inchpaper_logo_11.png`;
+
           // Render files attachment column with clickable HTML anchor tags for Gmail
           let mailFilesHtml = "None";
           if (filesForEmailMarkup.length > 0) {
@@ -833,14 +1192,14 @@ async function uploadFileToDrive(accessToken: string, file: { name: string; base
           const userHtmlBody = `
 <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);">
   <div style="background-color: #7D0909; padding: 24px; text-align: center; color: white;">
-    <img src="https://inchpaper.com/skin/frontend_b2b/default/images/inchpaper_logo.png" alt="Inchpaper" style="max-height: 40px; margin-bottom: 10px; display: inline-block;" />
+    <img src="${logoUrl}" alt="Inchpaper" style="max-height: 55px; height: auto; max-width: 220px; margin-bottom: 12px; display: inline-block;" />
     <h1 style="margin: 0; font-size: 20px; font-weight: 800; letter-spacing: 1px; color: #ffffff;">INCHPAPER ENTERPRISE SUPPLY DESK</h1>
     <p style="margin: 4px 0 0; font-size: 13px; opacity: 0.9; color: #ffffff;">RFQ Sourcing Confirmation • Ticket: ${ticketId}</p>
   </div>
   <div style="padding: 24px; background-color: #ffffff;">
     <p style="font-size: 14px; color: #4a5568; line-height: 1.5; margin-top: 0;">Dear ${contactPerson !== "N/A" ? contactPerson : "Procurement Team"},</p>
     <p style="font-size: 14px; color: #4a5568; line-height: 1.5;">Thank you for your bulk RFQ inquiry. This note confirms we have successfully registered your corporate sourcing request inside Inchpaper's central B2B routing system.</p>
-    <p style="font-size: 14px; color: #4a5568; line-height: 1.5;">A senior Key Account Manager has been assigned to your profile. We represent direct manufacturing pricing, direct HSN verification, and complete consolidated logistics support across all sectors.</p>
+    <p style="font-size: 14px; color: #4a5568; line-height: 1.5;">A Key Account Manager has been assigned to your profile. We represent direct manufacturing pricing, direct HSN verification, and complete consolidated logistics support across all sectors.</p>
     
     <div style="background-color: #f7fafc; padding: 16px; border-radius: 6px; margin: 20px 0; border: 1px solid #edf2f7;">
       <h3 style="margin: 0 0 10px; font-size: 13px; color: #7D0909; font-weight: bold; border-bottom: 1px solid #edf2f7; padding-bottom: 5px;">Inquiry Sourcing Summary:</h3>
@@ -868,18 +1227,18 @@ async function uploadFileToDrive(accessToken: string, file: { name: string; base
       </table>
     </div>
 
-    <p style="font-size: 14px; color: #4a5568; line-height: 1.5;"><b>What's Next?</b><br>Our dedicated pricing analyst will map your SKU / BOM configurations and provide you with a comprehensive invoice comparison demonstrating up to <b>18.5% in freight and catalog savings</b>. Expect a reply with an attached excel proposal within <b>1 to 2 business hours</b>.</p>
+    <p style="font-size: 14px; color: #4a5568; line-height: 1.5;"><b>What's Next?</b><br>Our dedicated pricing analyst will map your SKU / BOM configurations and provide you with a comprehensive quotation. Expect a reply with the quotation in <b>1 business working day</b>.</p>
     
-    <p style="font-size: 14px; color: #4a5568; line-height: 1.5;">If you have any further specifications, you can connect directly with our priority customer support desk at <b>+91 77038 60982</b> or reply to this email.</p>
+    <p style="font-size: 14px; color: #4a5568; line-height: 1.5;">If you have any further specifications, you can connect directly with our priority customer support desk at <b>+91-77038 60982</b> or reply to this email.</p>
     
     <p style="font-family: Arial; font-size: 13px; color: #4a5568; line-height: 1.5; margin-top: 25px; margin-bottom: 0;">
       Warm Regards,<br>
-      <b>Enterprise Supply Desk</b><br>
-      Inchpaper Logistics Partner
+      <b>Team Inchpaper</b><br>
+      Enterprise Supply Desk
     </p>
   </div>
   <div style="background-color: #edf2f7; padding: 16px; text-align: center; border-top: 1px solid #edf2f7;">
-    <p style="margin: 0; font-size: 11px; color: #718096;">Inchpaper Corporate Headquarters • Strategic Business Sourcing Partner</p>
+    <p style="margin: 0; font-size: 11px; color: #718096;">© 2026 Inchpaper Private Limited. All Business Rights Reserved.</p>
   </div>
 </div>`;
 
@@ -904,7 +1263,7 @@ async function uploadFileToDrive(accessToken: string, file: { name: string; base
             .replace(/=+$/, "");
 
           console.log(`[GMAIL DISPATCH] Sending admin notification to ${workspaceConfig.adminEmail}...`);
-          const adminRes = await fetch("https://gmail.googleapis.com/v1/users/me/messages/send", {
+          const adminRes = await fetch("https://www.googleapis.com/gmail/v1/users/me/messages/send", {
             method: "POST",
             headers: {
               "Authorization": `Bearer ${workspaceConfig.accessToken}`,
@@ -946,7 +1305,7 @@ async function uploadFileToDrive(accessToken: string, file: { name: string; base
               .replace(/=+$/, "");
 
             console.log(`[GMAIL DISPATCH] Sending client confirmation receipts to ${corporateEmail}...`);
-            const clientRes = await fetch("https://gmail.googleapis.com/v1/users/me/messages/send", {
+            const clientRes = await fetch("https://www.googleapis.com/gmail/v1/users/me/messages/send", {
               method: "POST",
               headers: {
                 "Authorization": `Bearer ${workspaceConfig.accessToken}`,
