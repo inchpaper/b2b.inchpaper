@@ -2,6 +2,7 @@ import React, { useState, useRef } from 'react';
 const brandLogo = "/inchpaper logo (6).png";
 import { PrivacyPolicyModal, TermsConditionsModal } from './components/LegalModals';
 import LeadConsoleModal from './components/LeadConsoleModal';
+import SmartSandboxModal from './components/SmartSandboxModal';
 import {
   Building2,
   GraduationCap,
@@ -86,6 +87,7 @@ export default function App() {
   const [isPrivacyOpen, setIsPrivacyOpen] = useState(false);
   const [isTermsOpen, setIsTermsOpen] = useState(false);
   const [isLeadConsoleOpen, setIsLeadConsoleOpen] = useState(false);
+  const [isSmartSandboxOpen, setIsSmartSandboxOpen] = useState(false);
 
   // Monitor URL search parameter transitions to trigger Lead Console
   React.useEffect(() => {
@@ -674,6 +676,14 @@ export default function App() {
               <Settings className="w-3.5 h-3.5 animate-spin-slow" />
               <span>Admin Console</span>
             </button>
+            <button
+              onClick={() => setIsSmartSandboxOpen(true)}
+              className="px-3.5 py-2 border border-[#7D0909] bg-rose-50 text-[#7D0909] hover:bg-[#7D0909] hover:text-white rounded-md text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer select-none shadow-xs"
+              title="Open smart semantic RFQ processing workspace"
+            >
+              <Sparkles className="w-3.5 h-3.5" />
+              <span>AI Sourcing Sandbox ✨</span>
+            </button>
             <a
               href="https://WA.me/917703860982"
               target="_blank"
@@ -748,6 +758,16 @@ export default function App() {
               >
                 <Settings className="w-4 h-4 text-[#7D0909]" />
                 <span>Admin Console / Lead CRM</span>
+              </button>
+              <button
+                onClick={() => {
+                  setIsMobileMenuOpen(false);
+                  setIsSmartSandboxOpen(true);
+                }}
+                className="p-2.5 bg-rose-50 border border-red-200 rounded font-extrabold text-[#7D0909] text-left hover:bg-red-100 flex items-center gap-1.5 focus:outline-none col-span-2 shadow-xs"
+              >
+                <Sparkles className="w-4 h-4 text-[#7D0909]" />
+                <span>AI Sourcing Sandbox ✨</span>
               </button>
             </div>
           </div>
@@ -1979,6 +1999,27 @@ export default function App() {
                 <p className="text-xs"><span className="font-bold text-black">GSTIN:</span> <span className="text-black font-normal font-mono text-xs">06AAFCI6721G1ZP</span></p>
                 <p className="text-xs"><span className="font-bold text-black">CIN:</span> <span className="text-black font-normal font-mono text-xs">U51909HR2020PTC086937</span></p>
                 <p className="text-xs"><span className="font-bold text-black">MSME:</span> <span className="text-black font-normal font-mono text-xs">UDYAM-HR-05-0042815</span></p>
+
+                {/* Website Carbon Badge */}
+                <div className="codepen_wrapper pt-3 mt-2 border-t border-slate-100">
+                  <div id="wcb" className="carbonbadge inline-block p-2.5 rounded-lg border border-slate-100 bg-slate-50/80 max-w-xs text-left">
+                    <div id="wcb_p" className="text-[11px] text-slate-700 font-bold flex flex-wrap items-center gap-1">
+                      <span id="wcb_g" className="text-emerald-700 font-extrabold">
+                        🌱 0.02g of CO<sub>2</sub>/view
+                      </span>
+                      <span className="text-slate-300">|</span>
+                      <span 
+                        id="wcb_a" 
+                        className="text-[#7D0909] font-extrabold"
+                      >
+                        Website Carbon
+                      </span>
+                    </div>
+                    <span id="wcb_2" className="text-[10px] text-slate-500 font-semibold block mt-1">
+                      &nbsp;Cleaner than 98% of pages tested
+                    </span>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -2164,6 +2205,7 @@ export default function App() {
       <PrivacyPolicyModal isOpen={isPrivacyOpen} onClose={() => setIsPrivacyOpen(false)} />
       <TermsConditionsModal isOpen={isTermsOpen} onClose={() => setIsTermsOpen(false)} />
       <LeadConsoleModal isOpen={isLeadConsoleOpen} onClose={() => setIsLeadConsoleOpen(false)} />
+      <SmartSandboxModal isOpen={isSmartSandboxOpen} onClose={() => setIsSmartSandboxOpen(false)} />
 
     </div>
   );

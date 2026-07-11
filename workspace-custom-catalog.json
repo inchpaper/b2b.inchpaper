@@ -1,0 +1,42 @@
+[
+  {
+    "sku": "SKU-PEN-01",
+    "name": "Reynolds 045 Blue Ball Pen (Pack of 10)",
+    "rate": 100,
+    "imageUrl": "https://img.icons8.com/color/180/pen.png",
+    "tags": "reynolds 045, ball pen, write-o-meter, writing pen, blue pen, ink ballpen, reynold, pack of 10",
+    "description": "Premium 0.7mm tungsten carbide tip and smooth ink flow. The classic, trusty writing instrument."
+  },
+  {
+    "sku": "SKU-PAP-02",
+    "name": "JK Copier A4 Paper 75GSM (Ream of 500 Sheets)",
+    "rate": 325,
+    "imageUrl": "https://img.icons8.com/color/180/file.png",
+    "tags": "jk copier, a4 paper, xerox sheet, 75 gsm, print paper, paper rim, photocopying, white sheets, copier pack",
+    "description": "High-speed copy and print paper, exceptional flatness. Suitable for double-sided photocopying."
+  },
+  {
+    "sku": "SKU-CLN-03",
+    "name": "Lizol Disinfectant Surface Cleaner Citrus 5L",
+    "rate": 780,
+    "imageUrl": "https://img.icons8.com/color/180/mop.png",
+    "tags": "lizol, floor cleaner, surface disinfectant, citrus 5 liter, phenyl, housekeeping chemical, chemical wash, cleaning liquid, lizoll",
+    "description": "Kills 99.9% of germs, removes tough stains, and leaves a pleasant citrus scent."
+  },
+  {
+    "sku": "SKU-STP-04",
+    "name": "Kangaro No. 10 Stapler with Staples Set",
+    "rate": 65,
+    "imageUrl": "https://img.icons8.com/color/180/stapler.png",
+    "tags": "kangaro stapler, pin machine, steel stapler, office stapling, paper pin, staples No10, stapler set, kanga",
+    "description": "All metal construction with quick loading mechanism. Comes with stapler and box of pin staples."
+  },
+  {
+    "sku": "SKU-COF-05",
+    "name": "Nescafe Classic Instant Coffee Glass Jar 200g",
+    "rate": 450,
+    "imageUrl": "https://img.icons8.com/color/180/coffee-beans.png",
+    "tags": "nescafe classic, instant coffee, pantry jar, caffeine brew, coffee powder, nescafe instant, nestle black, hot beverage, caffe",
+    "description": "100% pure natural coffee beans, slow-roasted to achieve a full-bodied, authentic taste."
+  }
+]
