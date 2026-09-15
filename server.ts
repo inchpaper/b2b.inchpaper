@@ -501,6 +501,153 @@ async function startServer() {
     }
   });
 
+  // CORPORATE GIFTING CATALOGS BACKEND DATABASE & APIS
+  const CORPORATE_CATALOGS_PATH = path.join(process.cwd(), "workspace-corporate-catalogs.json");
+
+  function getCorporateCatalogs(): any[] {
+    try {
+      if (!fs.existsSync(CORPORATE_CATALOGS_PATH)) {
+        const defaultCorporateCatalogs = [
+          {
+            id: "cat-executive-2026",
+            title: "Executive & Luxury Corporate Gifts",
+            buttonText: "Open Executive Gifts Catalog",
+            imageUrl: "https://images.unsplash.com/photo-1549465220-1a8b9238cd48?w=800&auto=format&fit=crop&q=80",
+            driveLink: "https://drive.google.com/drive/folders/1wY7-inchpaper-executive-gifts",
+            category: "Executive",
+            description: "Premium leatherette planners, matte vacuum flasks, brass pens & bespoke curated luxury gift boxes for executive leaders and VIP clients.",
+            badge: "Signature Collection",
+            order: 1
+          },
+          {
+            id: "cat-sustainable-2026",
+            title: "Eco-Friendly & Sustainable Gifting Collection",
+            buttonText: "Open Sustainable Gifts Catalog",
+            imageUrl: "https://images.unsplash.com/photo-1607344645866-009c320c5ab8?w=800&auto=format&fit=crop&q=80",
+            driveLink: "https://drive.google.com/drive/folders/1eco-inchpaper-sustainable-gifts",
+            category: "Sustainable",
+            description: "Conscious corporate gifting: 100% biodegradable cork journals, bamboo drinkware, plantable stationery, and organic tote sets.",
+            badge: "Eco Conscious",
+            order: 2
+          },
+          {
+            id: "cat-welcome-kits-2026",
+            title: "Employee Onboarding & Welcome Kits",
+            buttonText: "Open Welcome Kits Catalog",
+            imageUrl: "https://images.unsplash.com/photo-1513151233558-d860c5398176?w=800&auto=format&fit=crop&q=80",
+            driveLink: "https://drive.google.com/drive/folders/1welcome-inchpaper-kits",
+            category: "Onboarding",
+            description: "Make Day One remarkable with customized company apparel, branded stainless bottles, diaries, badges, and wireless chargers.",
+            badge: "Most Popular",
+            order: 3
+          },
+          {
+            id: "cat-festive-hampers-2026",
+            title: "Festive & Milestone Celebration Hampers",
+            buttonText: "Open Festive Hampers Catalog",
+            imageUrl: "https://images.unsplash.com/photo-1543257580-7269da773bf5?w=800&auto=format&fit=crop&q=80",
+            driveLink: "https://drive.google.com/drive/folders/1festive-inchpaper-hampers",
+            category: "Festive",
+            description: "Artisan brass dry-fruit jars, gourmet chocolates, scented soy wax candles, and customized corporate greeting hampers.",
+            badge: "Celebration Edition",
+            order: 4
+          }
+        ];
+        fs.writeFileSync(CORPORATE_CATALOGS_PATH, JSON.stringify(defaultCorporateCatalogs, null, 2), "utf-8");
+      }
+      const raw = fs.readFileSync(CORPORATE_CATALOGS_PATH, "utf-8");
+      return JSON.parse(raw);
+    } catch (err) {
+      console.error("[SERVER] Error reading corporate catalogs:", err);
+      return [];
+    }
+  }
+
+  function saveCorporateCatalogs(catalogs: any[]): boolean {
+    try {
+      fs.writeFileSync(CORPORATE_CATALOGS_PATH, JSON.stringify(catalogs, null, 2), "utf-8");
+      return true;
+    } catch (err) {
+      console.error("[SERVER] Error saving corporate catalogs:", err);
+      return false;
+    }
+  }
+
+  // GET all corporate catalogs
+  app.get("/api/catalogs", (req, res) => {
+    try {
+      const catalogs = getCorporateCatalogs();
+      res.json({ status: "success", catalogs });
+    } catch (err: any) {
+      res.status(500).json({ status: "error", message: err.message });
+    }
+  });
+
+  // POST save all catalogs (bulk / reorder)
+  app.post("/api/catalogs", (req, res) => {
+    try {
+      const { catalogs, password } = req.body;
+      if (password && !isAuthorizedAdmin(password)) {
+        return res.status(401).json({ status: "error", message: "Unauthorized admin passkey" });
+      }
+      if (!Array.isArray(catalogs)) {
+        return res.status(400).json({ status: "error", message: "Catalogs must be an array" });
+      }
+      saveCorporateCatalogs(catalogs);
+      res.json({ status: "success", message: "Catalogs saved successfully", catalogs });
+    } catch (err: any) {
+      res.status(500).json({ status: "error", message: err.message });
+    }
+  });
+
+  // POST add or update single catalog item
+  app.post("/api/catalogs/item", (req, res) => {
+    try {
+      const { catalog, password } = req.body;
+      if (password && !isAuthorizedAdmin(password)) {
+        return res.status(401).json({ status: "error", message: "Unauthorized admin passkey" });
+      }
+      if (!catalog || !catalog.title) {
+        return res.status(400).json({ status: "error", message: "Catalog title is required" });
+      }
+
+      const list = getCorporateCatalogs();
+      const existingIdx = list.findIndex((c: any) => c.id === catalog.id);
+      if (existingIdx > -1) {
+        list[existingIdx] = { ...list[existingIdx], ...catalog, updatedAt: new Date().toISOString() };
+      } else {
+        const newCat = {
+          ...catalog,
+          id: catalog.id || `cat-${Date.now()}`,
+          order: list.length + 1,
+          createdAt: new Date().toISOString()
+        };
+        list.push(newCat);
+      }
+      saveCorporateCatalogs(list);
+      res.json({ status: "success", message: "Catalog item updated successfully", catalogs: list });
+    } catch (err: any) {
+      res.status(500).json({ status: "error", message: err.message });
+    }
+  });
+
+  // DELETE catalog item
+  app.delete("/api/catalogs/:id", (req, res) => {
+    try {
+      const { id } = req.params;
+      const { password } = req.body || {};
+      if (password && !isAuthorizedAdmin(password)) {
+        return res.status(401).json({ status: "error", message: "Unauthorized admin passkey" });
+      }
+      let list = getCorporateCatalogs();
+      list = list.filter((c: any) => c.id !== id);
+      saveCorporateCatalogs(list);
+      res.json({ status: "success", message: "Catalog item deleted successfully", catalogs: list });
+    } catch (err: any) {
+      res.status(500).json({ status: "error", message: err.message });
+    }
+  });
+
   // MATCH MESSY ITEMS TO CATALOG USING SEMANTIC SEARCH OR DETERMINISTIC TAG DETECTOR
   app.post("/api/workspace/smart-match/match", async (req, res) => {
     try {

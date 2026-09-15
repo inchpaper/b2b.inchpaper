@@ -1,1 +1,22 @@
 @import "tailwindcss";
+
+@keyframes breathing {
+  0% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.055);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+.animate-breathing {
+  animation: breathing 3s ease-in-out infinite;
+}
+
+.group:hover .group-hover-breathing,
+.hover-breathing:hover {
+  animation: breathing 2.8s ease-in-out infinite;
+}

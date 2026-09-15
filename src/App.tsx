@@ -1,8 +1,13 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 const brandLogo = "/inchpaper logo (6).png";
+
+// HERO STATIC BANNER CONFIGURATION:
+const HERO_STATIC_BANNER_IMAGE = "/inchpaper-corporate-gifting-solutions-provider.png";
+const HERO_STATIC_BANNER_LINK = "https://b2b.inchpaper.com/catalog";
 import { PrivacyPolicyModal, TermsConditionsModal } from './components/LegalModals';
 import LeadConsoleModal from './components/LeadConsoleModal';
 import SmartSandboxModal from './components/SmartSandboxModal';
+import CatalogPage from './components/CatalogPage';
 import {
   Building2,
   GraduationCap,
@@ -44,7 +49,8 @@ import {
   Award,
   BookOpen,
   Briefcase,
-  Settings
+  Settings,
+  Gift
 } from 'lucide-react';
 
 // Interfaces for our interactive widgets
@@ -128,6 +134,31 @@ export default function App() {
   const [isSupportOpen, setIsSupportOpen] = useState(false);
   const [supportSubmitted, setSupportSubmitted] = useState(false);
   const [supportMessage, setSupportMessage] = useState('');
+
+  // Catalog page view routing
+  const [currentView, setCurrentView] = useState<'home' | 'catalog'>(() => {
+    if (typeof window !== 'undefined') {
+      return window.location.pathname.startsWith('/catalog') ? 'catalog' : 'home';
+    }
+    return 'home';
+  });
+
+  useEffect(() => {
+    const handlePopState = () => {
+      setCurrentView(window.location.pathname.startsWith('/catalog') ? 'catalog' : 'home');
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
+
+  const navigateTo = (view: 'home' | 'catalog') => {
+    setCurrentView(view);
+    const targetPath = view === 'catalog' ? '/catalog' : '/';
+    if (window.location.pathname !== targetPath) {
+      window.history.pushState({}, '', targetPath);
+    }
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
 
   // 1. Savings calculator state
   const [stationerySpend, setStationerySpend] = useState(25000);
@@ -626,6 +657,32 @@ export default function App() {
   const creditAdvantageSavings = Math.round(totalSpend * 0.04);
   const totalAnnualSavings = (directSourcingSavings + procurementProcessReduction + creditAdvantageSavings) * 12;
 
+  if (currentView === 'catalog') {
+    return (
+      <>
+        <CatalogPage
+          onBackToHome={() => navigateTo('home')}
+          brandLogo={brandLogo}
+          heroBannerImage={HERO_STATIC_BANNER_IMAGE}
+          onOpenPrivacy={() => setIsPrivacyOpen(true)}
+          onOpenTerms={() => setIsTermsOpen(true)}
+          onOpenLeadConsole={() => setIsLeadConsoleOpen(true)}
+          onOpenRFQ={() => {
+            navigateTo('home');
+            setTimeout(() => {
+              const el = document.getElementById('rfq-form-anchor');
+              if (el) el.scrollIntoView({ behavior: 'smooth' });
+            }, 100);
+          }}
+        />
+        {/* Modals accessible from Catalog Page */}
+        {isPrivacyOpen && <PrivacyPolicyModal isOpen={isPrivacyOpen} onClose={() => setIsPrivacyOpen(false)} />}
+        {isTermsOpen && <TermsConditionsModal isOpen={isTermsOpen} onClose={() => setIsTermsOpen(false)} />}
+        {isLeadConsoleOpen && <LeadConsoleModal isOpen={isLeadConsoleOpen} onClose={() => setIsLeadConsoleOpen(false)} />}
+      </>
+    );
+  }
+
   return (
     <div id="inchpaper-b2b-portal" className="min-h-screen relative flex flex-col text-slate-800 bg-[#FFFFFF]">
 
@@ -660,6 +717,14 @@ export default function App() {
             <a href="#about-consolidation" className="hover:text-[#7D0909] transition-colors">Consolidation Advantages</a>
             <a href="#industries-serve" className="hover:text-[#7D0909] transition-colors font-medium">Sectors Supported</a>
             <a href="#catalog-browser" className="hover:text-[#7D0909] transition-colors">Procurement Categories</a>
+            <button
+              onClick={() => navigateTo('catalog')}
+              className="hover:text-[#7D0909] transition-colors font-bold text-[#7D0909] flex items-center gap-1.5 bg-rose-50 border border-red-200/80 px-2.5 py-1 rounded cursor-pointer"
+              title="Explore corporate gifting catalogs"
+            >
+              <Gift className="w-4 h-4 text-[#7D0909]" />
+              <span>Corporate Catalogs</span>
+            </button>
             <a href="#savings-estimator" className="hover:text-[#7D0909] transition-colors text-[#7D0909] flex items-center gap-1 bg-[#7D0909]/5 px-2.5 py-1 rounded">
               <TrendingDown className="w-4 h-4" /> Savings Calculator
             </a>
@@ -752,6 +817,16 @@ export default function App() {
               <button
                 onClick={() => {
                   setIsMobileMenuOpen(false);
+                  navigateTo('catalog');
+                }}
+                className="p-2.5 bg-rose-50 border border-red-200 rounded font-extrabold text-[#7D0909] text-left hover:bg-red-100 flex items-center gap-1.5 focus:outline-none col-span-2 shadow-xs cursor-pointer"
+              >
+                <Gift className="w-4 h-4 text-[#7D0909]" />
+                <span>Corporate Gift Catalog 🎁</span>
+              </button>
+              <button
+                onClick={() => {
+                  setIsMobileMenuOpen(false);
                   setIsLeadConsoleOpen(true);
                 }}
                 className="p-2.5 bg-rose-50 border border-red-100/50 rounded font-extrabold text-slate-800 text-left hover:bg-red-100 flex items-center gap-1.5 focus:outline-none col-span-2"
@@ -786,16 +861,57 @@ export default function App() {
               <MessageSquare className="w-3.5 h-3.5 fill-white text-[#128C7E]" />
               <span>WhatsApp RFQ</span>
             </a>
-            <a
-              href="#rfq-form-anchor"
-              className="flex items-center justify-center py-2 px-2.5 bg-[#7D0909] hover:bg-[#5E0606] text-white rounded font-bold text-[11px] text-center shadow-sm whitespace-nowrap transition-colors"
+            <button
+              onClick={() => navigateTo('catalog')}
+              className="flex items-center justify-center py-2 px-2.5 bg-[#7D0909] hover:bg-[#5E0606] text-white rounded font-bold text-[11px] text-center shadow-sm whitespace-nowrap transition-colors cursor-pointer"
               id="mobile-cta-catalog"
             >
-              <span>Request Catalog</span>
-            </a>
+              <span>Corporate Catalogs</span>
+            </button>
           </div>
         </div>
       </header>
+
+      {/* HERO SECTION — STATIC BANNER WITH DIRECT LINK & CORPORATE GIFT CATALOG BUTTON */}
+      <section className="w-full bg-slate-50/70 border-b border-slate-200/80 py-4 sm:py-6 px-3 sm:px-6 lg:px-8" id="hero-banner-section">
+        <div className="max-w-7xl mx-auto space-y-4">
+          {/* Static Clickable Banner Image */}
+          <a
+            href="/catalog"
+            onClick={(e) => {
+              e.preventDefault();
+              navigateTo('catalog');
+            }}
+            className="group block relative overflow-hidden rounded-xl sm:rounded-2xl shadow-xs hover:shadow-lg transition-all duration-300 border border-slate-200/80 bg-white cursor-pointer"
+            id="hero-static-banner-link"
+            aria-label="Visit Inchpaper Corporate Gift Catalog at b2b.inchpaper.com/catalog"
+          >
+            <img
+              src={HERO_STATIC_BANNER_IMAGE}
+              alt="Inchpaper B2B Corporate Wholesale Catalog Banner"
+              className="w-full h-auto max-h-[380px] sm:max-h-[440px] md:max-h-[500px] object-cover object-center transform group-hover:scale-[1.008] transition-transform duration-500 ease-out"
+              referrerPolicy="no-referrer"
+            />
+          </a>
+
+          {/* Action Button Below the Image */}
+          <div className="flex items-center justify-center pt-1">
+            <a
+              href="/catalog"
+              onClick={(e) => {
+                e.preventDefault();
+                navigateTo('catalog');
+              }}
+              className="inline-flex items-center justify-center gap-2.5 px-8 py-3 bg-[#7D0909] hover:bg-[#5E0606] text-white text-sm sm:text-base font-bold rounded-xl shadow-md hover:shadow-lg transition-all duration-200 transform hover:-translate-y-0.5 active:translate-y-0 group cursor-pointer"
+              id="hero-corporate-gift-catalog-btn"
+            >
+              <BookOpen className="w-4 h-4 sm:w-5 sm:h-5 text-white/90" />
+              <span>Corporate Gift Catalog</span>
+              <ArrowRight className="w-4 h-4 sm:w-5 sm:h-5 group-hover:translate-x-0.5 transition-transform" />
+            </a>
+          </div>
+        </div>
+      </section>
 
       {/* SECTION 1 — GLOBAL ENTERPRISE HERO WITH INTERACTIVE RFQ & BOM DISPATCH PANEL */}
       <section className="relative bg-white py-12 lg:py-20 px-4 sm:px-6 lg:px-8 border-b border-slate-100">
@@ -1992,7 +2108,7 @@ export default function App() {
               
               <div className="space-y-1 pt-2 border-t border-slate-100">
                 <p className="text-xs"><span className="font-bold text-black">Email:</span> <a href="mailto:info@inchpaper.com" className="text-black hover:text-[#7D0909] font-normal underline">info@inchpaper.com</a></p>
-                <p className="text-xs"><span className="font-bold text-black">Helpline:</span> <a href="tel:+917703860982" className="text-black hover:text-[#7D0909] font-normal">+91-7703860982</a></p>
+                <p className="text-xs"><span className="font-bold text-black">Helpline:</span> <a href="tel:+917703860982" className="text-black hover:text-[#7D0909] font-normal">+91 77038 60982</a></p>
               </div>
 
               <div className="space-y-1 pt-2 border-t border-slate-100">
