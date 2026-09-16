@@ -504,6 +504,22 @@ async function startServer() {
   // CORPORATE GIFTING CATALOGS BACKEND DATABASE & APIS
   const CORPORATE_CATALOGS_PATH = path.join(process.cwd(), "workspace-corporate-catalogs.json");
 
+  function cleanDriveImageUrl(url?: string): string {
+    if (!url) return "";
+    const trimmed = String(url).trim();
+    if (trimmed.includes("drive.google.com") || trimmed.includes("docs.google.com")) {
+      const fileDMatch = trimmed.match(/\/file\/d\/([a-zA-Z0-9_-]+)/);
+      if (fileDMatch && fileDMatch[1]) return `https://lh3.googleusercontent.com/d/${fileDMatch[1]}`;
+      const idMatch = trimmed.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+      if (idMatch && idMatch[1]) return `https://lh3.googleusercontent.com/d/${idMatch[1]}`;
+      const openMatch = trimmed.match(/\/open\?id=([a-zA-Z0-9_-]+)/);
+      if (openMatch && openMatch[1]) return `https://lh3.googleusercontent.com/d/${openMatch[1]}`;
+      const thumbMatch = trimmed.match(/\/thumbnail\?.*id=([a-zA-Z0-9_-]+)/);
+      if (thumbMatch && thumbMatch[1]) return `https://lh3.googleusercontent.com/d/${thumbMatch[1]}`;
+    }
+    return trimmed;
+  }
+
   function getCorporateCatalogs(): any[] {
     try {
       if (!fs.existsSync(CORPORATE_CATALOGS_PATH)) {
@@ -556,7 +572,11 @@ async function startServer() {
         fs.writeFileSync(CORPORATE_CATALOGS_PATH, JSON.stringify(defaultCorporateCatalogs, null, 2), "utf-8");
       }
       const raw = fs.readFileSync(CORPORATE_CATALOGS_PATH, "utf-8");
-      return JSON.parse(raw);
+      const list = JSON.parse(raw);
+      return Array.isArray(list) ? list.map((item: any) => ({
+        ...item,
+        imageUrl: cleanDriveImageUrl(item.imageUrl)
+      })) : [];
     } catch (err) {
       console.error("[SERVER] Error reading corporate catalogs:", err);
       return [];
@@ -565,7 +585,11 @@ async function startServer() {
 
   function saveCorporateCatalogs(catalogs: any[]): boolean {
     try {
-      fs.writeFileSync(CORPORATE_CATALOGS_PATH, JSON.stringify(catalogs, null, 2), "utf-8");
+      const sanitized = Array.isArray(catalogs) ? catalogs.map((item: any) => ({
+        ...item,
+        imageUrl: cleanDriveImageUrl(item.imageUrl)
+      })) : [];
+      fs.writeFileSync(CORPORATE_CATALOGS_PATH, JSON.stringify(sanitized, null, 2), "utf-8");
       return true;
     } catch (err) {
       console.error("[SERVER] Error saving corporate catalogs:", err);
@@ -2177,6 +2201,9 @@ async function uploadFileToDrive(accessToken: string, file: { name: string; base
   } else {
     const distPath = path.join(process.cwd(), "dist");
     app.use(express.static(distPath));
+    app.get(["/catalog", "/catalog/*"], (_req, res) => {
+      res.sendFile(path.join(distPath, "index.html"));
+    });
     app.get("*", (req, res) => {
       res.sendFile(path.join(distPath, "index.html"));
     });
